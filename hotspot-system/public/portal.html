@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KARIBU NET — Lipa ili uunganike</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      font-family:'Segoe UI',Tahoma,sans-serif;
+      background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);
+      min-height:100vh;display:flex;align-items:center;
+      justify-content:center;padding:15px;
+    }
+    .card{
+      background:white;border-radius:24px;padding:28px;
+      width:100%;max-width:420px;
+      box-shadow:0 25px 80px rgba(0,0,0,0.4);
+    }
+    .header{text-align:center;margin-bottom:22px}
+    .header .icon{font-size:42px;margin-bottom:6px}
+    .header h1{font-size:24px;color:#1a1a2e;font-weight:800;letter-spacing:-0.5px}
+    .header p{color:#666;font-size:13px;margin-top:4px}
+    
+    .section-title{
+      font-size:13px;font-weight:700;color:#888;
+      text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;
+    }
+    
+    .packages{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}
+    .pkg{
+      border:2px solid #e8e8e8;border-radius:14px;
+      padding:14px 10px;text-align:center;cursor:pointer;
+      transition:all 0.2s;background:#fafafa;
+    }
+    .pkg:hover{border-color:#0f3460;background:#f0f4ff}
+    .pkg.selected{border-color:#0f3460;background:#e8f0ff;transform:scale(1.02)}
+    .pkg.weekly{grid-column:span 2}
+    .pkg .dur{font-weight:800;font-size:15px;color:#222}
+    .pkg .pr{color:#0f3460;font-weight:900;font-size:17px;margin-top:4px}
+    .pkg .ps{font-size:10px;color:#888;margin-top:2px}
+    
+    .form-group{margin-bottom:16px}
+    .form-group label{
+      display:block;color:#444;margin-bottom:6px;
+      font-size:13px;font-weight:700;
+    }
+    .form-group input{
+      width:100%;padding:13px 16px;border:2px solid #e8e8e8;
+      border-radius:12px;font-size:16px;outline:none;
+      transition:border 0.2s;background:#fafafa;
+    }
+    .form-group input:focus{border-color:#0f3460;background:white}
+    
+    .methods{display:flex;gap:10px;margin-bottom:20px}
+    .method-btn{
+      flex:1;padding:13px 8px;border:2px solid #e8e8e8;
+      border-radius:12px;background:white;cursor:pointer;
+      font-weight:700;font-size:13px;transition:all 0.2s;
+      display:flex;flex-direction:column;align-items:center;gap:4px;
+    }
+    .method-btn .dot{width:10px;height:10px;border-radius:50%;margin:0 auto}
+    .method-btn.airtel .dot{background:#e53935}
+    .method-btn.tigo .dot{background:#1565c0}
+    .method-btn.selected{border-color:#0f3460;background:#e8f0ff}
+    
+    .pay-btn{
+      width:100%;padding:16px;
+      background:linear-gradient(135deg,#0f3460,#1a1a2e);
+      color:white;border:none;border-radius:14px;
+      font-size:17px;font-weight:800;cursor:pointer;
+      transition:opacity 0.2s;letter-spacing:0.5px;
+    }
+    .pay-btn:disabled{opacity:0.4;cursor:not-allowed}
+    .pay-btn:not(:disabled):hover{opacity:0.9}
+    
+    .msg{
+      text-align:center;padding:14px;border-radius:12px;
+      margin-top:14px;display:none;font-weight:600;font-size:14px;
+      line-height:1.5;
+    }
+    .msg.success{background:#e8f5e9;color:#1b5e20}
+    .msg.error{background:#ffebee;color:#b71c1c}
+    .msg.waiting{background:#fff8e1;color:#e65100}
+    
+    .spinner{
+      display:inline-block;width:18px;height:18px;
+      border:3px solid rgba(255,255,255,0.3);border-radius:50%;
+      border-top-color:white;animation:spin 0.8s linear infinite;
+      margin-right:8px;vertical-align:middle;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    
+    .footer{text-align:center;margin-top:18px;color:#aaa;font-size:11px}
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div class="icon">📶</div>
+    <h1>KARIBU NET</h1>
+    <p>Chagua package, lipa, uunganike mara moja</p>
+  </div>
+
+  <div class="section-title">📦 Chagua Package</div>
+  <div class="packages" id="pkgContainer">
+    <div style="grid-column:span 2;text-align:center;color:#888;padding:20px">
+      Inapakia packages...
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>📱 Namba ya Simu</label>
+    <input type="tel" id="phone" placeholder="0754 000 000 au 0654 000 000" maxlength="13">
+  </div>
+
+  <div class="section-title">💳 Njia ya Kulipa</div>
+  <div class="methods">
+    <button class="method-btn airtel" onclick="selectMethod('airtel',this)">
+      <div class="dot"></div>
+      <span>Airtel Money</span>
+    </button>
+    <button class="method-btn tigo" onclick="selectMethod('tigo',this)">
+      <div class="dot"></div>
+      <span>Tigo Pesa</span>
+    </button>
+  </div>
+
+  <button class="pay-btn" id="payBtn" onclick="pay()" disabled>
+    💰 LIPA SASA
+  </button>
+
+  <div class="msg" id="msg"></div>
+  <div class="footer">Malipo yanashughulikiwa salama na Selcom</div>
+</div>
+
+<script>
+  let selPkg = null, selMethod = null, txId = null, poll = null;
+
+  // Load packages
+  fetch('/api/packages').then(r=>r.json()).then(pkgs=>{
+    const c = document.getElementById('pkgContainer');
+    c.innerHTML = '';
+    Object.entries(pkgs).forEach(([id,p])=>{
+      const d = document.createElement('div');
+      d.className = 'pkg' + (id==='weekly'?' weekly':'');
+      d.dataset.id = id;
+      d.innerHTML = `
+        <div class="dur">${p.name}</div>
+        <div class="pr">TSh ${p.price.toLocaleString()}</div>
+        <div class="ps">${formatMins(p.minutes)}</div>
+      `;
+      d.onclick = ()=>selectPkg(id,d);
+      c.appendChild(d);
+    });
+  });
+
+  function formatMins(m){
+    if(m<60) return m+'min';
+    if(m<1440) return (m/60)+'hr';
+    if(m<10080) return (m/1440)+' siku';
+    return (m/10080)+' wiki';
+  }
+
+  function selectPkg(id,el){
+    document.querySelectorAll('.pkg').forEach(p=>p.classList.remove('selected'));
+    el.classList.add('selected');
+    selPkg=id; checkReady();
+  }
+
+  function selectMethod(m,el){
+    document.querySelectorAll('.method-btn').forEach(b=>b.classList.remove('selected'));
+    el.classList.add('selected');
+    selMethod=m; checkReady();
+  }
+
+  function checkReady(){
+    const ph = document.getElementById('phone').value.replace(/\s/g,'');
+    document.getElementById('payBtn').disabled = !(selPkg&&selMethod&&ph.length>=10);
+  }
+  document.getElementById('phone').addEventListener('input',checkReady);
+
+  async function pay(){
+    const phone = document.getElementById('phone').value.replace(/\s/g,'');
+    const btn = document.getElementById('payBtn');
+    btn.disabled=true;
+    btn.innerHTML='<span class="spinner"></span>Inatuma ombi...';
+
+    try{
+      const r = await fetch('/api/pay',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({phone,package:selPkg,mac:'auto',method:selMethod})
+      });
+      const d = await r.json();
+
+      if(d.success){
+        txId = d.transaction_id;
+        showMsg('waiting','⏳ '+d.message+'\n\nIngiza PIN yako kwenye simu kukamilisha malipo.');
+        btn.innerHTML='<span class="spinner"></span>Inasubiri malipo...';
+        poll = setInterval(checkStatus,5000);
+        setTimeout(()=>{
+          clearInterval(poll);
+          if(btn.disabled&&btn.innerHTML.includes('spinner')){
+            btn.disabled=false;
+            btn.innerHTML='💰 LIPA SASA';
+            showMsg('error','⏰ Muda umepita. Jaribu tena.');
+          }
+        },180000);
+      } else {
+        showMsg('error', d.message||'Hitilafu. Jaribu tena.');
+        btn.disabled=false;
+        btn.innerHTML='💰 LIPA SASA';
+      }
+    } catch(e){
+      showMsg('error','Hitilafu ya mtandao. Jaribu tena.');
+      btn.disabled=false;
+      btn.innerHTML='💰 LIPA SASA';
+    }
+  }
+
+  async function checkStatus(){
+    if(!txId) return;
+    try{
+      const r = await fetch('/api/status/'+txId);
+      const d = await r.json();
+      if(d.status==='active'){
+        clearInterval(poll);
+        showMsg('success','✅ Umefanikiwa!\n\n📦 Package: '+d.package+'\n⏰ Muda unaoisha: '+new Date(d.expires).toLocaleTimeString('sw-TZ')+'\n\nFurahia internet yako!');
+        document.getElementById('payBtn').innerHTML='✅ UMEUNGANIKA!';
+        setTimeout(()=>location.reload(),5000);
+      }
+    } catch(e){}
+  }
+
+  function showMsg(type,text){
+    const el=document.getElementById('msg');
+    el.className='msg '+type;
+    el.style.display='block';
+    el.innerHTML=text.replace(/\n/g,'<br>');
+  }
+</script>
+</body>
+</html>

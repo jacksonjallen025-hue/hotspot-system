@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KARIBU NET — Admin Dashboard</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#eee;min-height:100vh}
+    .header{
+      background:linear-gradient(135deg,#0f3460,#1a1a2e);
+      padding:20px 30px;display:flex;justify-content:space-between;align-items:center;
+      border-bottom:1px solid #333;
+    }
+    .header h1{font-size:20px;font-weight:800;color:#fff}
+    .header .live{
+      background:#1eff6e22;color:#1eff6e;
+      border:1px solid #1eff6e44;border-radius:20px;
+      padding:6px 14px;font-size:12px;font-weight:700;
+    }
+    .container{max-width:1200px;margin:0 auto;padding:25px 20px}
+    
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:30px}
+    .stat-card{
+      background:#1a1a2e;border-radius:16px;padding:20px;
+      border:1px solid #2a2a4a;
+    }
+    .stat-card .label{color:#888;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+    .stat-card .value{font-size:28px;font-weight:900;color:#fff;margin-top:6px}
+    .stat-card .value.green{color:#1eff6e}
+    .stat-card .value.blue{color:#5b9cf6}
+    .stat-card .value.yellow{color:#ffd700}
+    .stat-card .value.red{color:#ff6b6b}
+    
+    .section-title{
+      font-size:15px;font-weight:700;color:#aaa;margin-bottom:14px;
+      display:flex;justify-content:space-between;align-items:center;
+    }
+    .refresh-btn{
+      background:#1a1a2e;border:1px solid #333;color:#aaa;
+      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;
+    }
+    .refresh-btn:hover{color:#fff;border-color:#555}
+    
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#1a1a2e;color:#888;padding:12px 14px;text-align:left;font-weight:600}
+    td{padding:12px 14px;border-bottom:1px solid #1a1a2e;color:#ccc}
+    tr:hover td{background:#1a1a2e88}
+    
+    .badge{
+      padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;
+    }
+    .badge.active{background:#1eff6e22;color:#1eff6e}
+    .badge.expired{background:#ff6b6b22;color:#ff6b6b}
+    .badge.pending{background:#ffd70022;color:#ffd700}
+    
+    .empty{text-align:center;color:#555;padding:40px;font-size:15px}
+    
+    .loading{text-align:center;color:#555;padding:40px}
+    
+    @media(max-width:600px){
+      .stats{grid-template-columns:1fr 1fr}
+      td,th{padding:8px 10px;font-size:12px}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📶 KARIBU NET — Admin</h1>
+    <span class="live" id="liveIndicator">● LIVE</span>
+  </div>
+  
+  <div class="container">
+    <div class="stats" id="statsContainer">
+      <div class="stat-card">
+        <div class="label">Mapato Leo</div>
+        <div class="value green" id="todayRevenue">...</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Mauzo Leo</div>
+        <div class="value blue" id="todaySales">...</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Waliopo Sasa</div>
+        <div class="value yellow" id="activeSessions">...</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Mapato Wiki Hii</div>
+        <div class="value" id="weekRevenue">...</div>
+      </div>
+    </div>
+    
+    <div class="section-title">
+      <span>📋 Miamala ya Hivi Karibuni</span>
+      <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
+    </div>
+    
+    <div id="tableContainer">
+      <div class="loading">Inapakia data...</div>
+    </div>
+  </div>
+  
+  <script>
+    const ADMIN_KEY = new URLSearchParams(window.location.search).get('key') || '';
+    
+    async function loadStats(){
+      try{
+        const r = await fetch('/api/admin/stats',{headers:{'x-admin-key':ADMIN_KEY}});
+        if(!r.ok) return;
+        const d = await r.json();
+        document.getElementById('todayRevenue').textContent = 'TSh '+Number(d.today_revenue||0).toLocaleString();
+        document.getElementById('todaySales').textContent = (d.today_sales||0)+' mauzo';
+        document.getElementById('activeSessions').textContent = (d.active_sessions||0)+' wateja';
+        document.getElementById('weekRevenue').textContent = 'TSh '+Number(d.week_revenue||0).toLocaleString();
+      }catch(e){ console.error(e) }
+    }
+    
+    async function loadSessions(){
+      try{
+        const r = await fetch('/api/admin/sessions',{headers:{'x-admin-key':ADMIN_KEY}});
+        if(!r.ok){
+          document.getElementById('tableContainer').innerHTML = '<div class="empty">❌ Unauthorized. Angalia admin key.</div>';
+          return;
+        }
+        const sessions = await r.json();
+        
+        if(!sessions.length){
+          document.getElementById('tableContainer').innerHTML = '<div class="empty">Hakuna miamala bado</div>';
+          return;
+        }
+        
+        const rows = sessions.map(s=>(`
+          <tr>
+            <td>${new Date(s.created_at).toLocaleString('sw-TZ')}</td>
+            <td>${s.phone_number||'-'}</td>
+            <td>${s.package_id||'-'}</td>
+            <td>TSh ${(s.amount||0).toLocaleString()}</td>
+            <td>${s.voucher||'-'}</td>
+            <td>${s.end_time ? new Date(s.end_time).toLocaleTimeString('sw-TZ') : '-'}</td>
+            <td><span class="badge ${s.status}">${s.status}</span></td>
+          </tr>
+        `)).join('');
+        
+        document.getElementById('tableContainer').innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Tarehe/Muda</th>
+                <th>Simu</th>
+                <th>Package</th>
+                <th>Kiasi</th>
+                <th>Voucher</th>
+                <th>Inaisha</th>
+                <th>Hali</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }catch(e){
+        document.getElementById('tableContainer').innerHTML = '<div class="empty">Hitilafu ya kupakia data</div>';
+      }
+    }
+    
+    function loadData(){
+      loadStats();
+      loadSessions();
+    }
+    
+    loadData();
+    setInterval(loadData, 30000); // Auto-refresh every 30 seconds
+  </script>
+</body>
+</html>
