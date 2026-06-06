@@ -16,7 +16,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
-app.use(express.static('public'));
+app.use(express.static('.'));
 
 // ============ DATABASE ============
 const pool = new Pool({
@@ -277,7 +277,7 @@ app.get('/admin', (req, res) => {
   if (req.query.key !== process.env.ADMIN_KEY) {
     return res.status(401).send('<h2>Unauthorized - Weka admin key sahihi</h2>');
   }
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+  res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
 app.get('/api/admin/sessions', async (req, res) => {
