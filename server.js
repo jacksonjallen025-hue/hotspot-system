@@ -26,11 +26,10 @@ const pool = new Pool({
 
 // ============ PACKAGES ============
 const PACKAGES = {
-  '1hr':    { name: '1 Saa',     minutes: 60,    price: 300   },
-  '3hr':    { name: '3 Saa',     minutes: 180,   price: 700   },
-  '12hr':   { name: '12 Saa',    minutes: 720,   price: 1200  },
-  'daily':  { name: 'Siku Moja', minutes: 1440,  price: 2000  },
-  'weekly': { name: 'Wiki Moja', minutes: 10080, price: 8000  }
+  '12hr':    { name: 'Masaa 12',    minutes: 720,   price: 500   },
+  'daily':   { name: 'Siku Moja',   minutes: 1440,  price: 1000  },
+  'half':    { name: 'Nusu Mwezi',  minutes: 21600, price: 7500  },
+  'monthly': { name: 'Mwezi Mzima', minutes: 43200, price: 15000 }
 };
 
 // ============ DATABASE INIT ============
