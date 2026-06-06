@@ -57,6 +57,16 @@ async function initDB() {
         executed BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS vouchers (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(20) UNIQUE,
+        package_id VARCHAR(10),
+        used BOOLEAN DEFAULT FALSE,
+        mac_address VARCHAR(20),
+        used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     console.log('✅ Database initialized');
   } catch (err) {
@@ -244,6 +254,117 @@ app.post('/api/agent/commands/:id/done', async (req, res) => {
   try {
     await pool.query('UPDATE commands SET executed=TRUE WHERE id=$1', [req.params.id]);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ============ VOUCHER REDEEM (Customer) ============
+app.post('/api/voucher/redeem', async (req, res) => {
+  const { code, mac } = req.body;
+
+  if (!code || !mac) {
+    return res.status(400).json({ success: false, message: 'Code na MAC zinahitajika' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM vouchers WHERE code = $1',
+      [code.toUpperCase().trim()]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'Code batili. Angalia tena.' });
+    }
+
+    const voucher = result.rows[0];
+
+    if (voucher.used) {
+      return res.status(400).json({ success: false, message: 'Code hii imeshatumika.' });
+    }
+
+    const pkg = PACKAGES[voucher.package_id];
+    if (!pkg) {
+      return res.status(400).json({ success: false, message: 'Package batili.' });
+    }
+
+    const startTime = new Date();
+    const endTime = new Date(startTime.getTime() + pkg.minutes * 60 * 1000);
+    const txId = generateTxId();
+
+    // Save session
+    await pool.query(
+      `INSERT INTO sessions (transaction_id, mac_address, phone_number, package_id, amount, voucher, start_time, end_time, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active')`,
+      [txId, mac, 'voucher', voucher.package_id, pkg.price, code, startTime, endTime]
+    );
+
+    // Mark voucher as used
+    await pool.query(
+      'UPDATE vouchers SET used = TRUE, mac_address = $1, used_at = NOW() WHERE code = $2',
+      [mac, code.toUpperCase().trim()]
+    );
+
+    // Queue ALLOW command
+    await pool.query(
+      'INSERT INTO commands (mac_address, action) VALUES ($1, $2)',
+      [mac, 'allow']
+    );
+
+    res.json({
+      success: true,
+      message: `✅ Umefanikiwa! Una ${pkg.name} ya internet.`,
+      package: pkg.name,
+      expires: endTime
+    });
+
+  } catch (err) {
+    console.error('Voucher redeem error:', err.message);
+    res.status(500).json({ success: false, message: 'Hitilafu. Jaribu tena.' });
+  }
+});
+
+// ============ VOUCHER GENERATE (Admin) ============
+app.post('/api/admin/vouchers/generate', async (req, res) => {
+  if (req.headers['x-admin-key'] !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const { package_id, quantity } = req.body;
+
+  if (!PACKAGES[package_id]) {
+    return res.status(400).json({ error: 'Package batili' });
+  }
+
+  const qty = Math.min(parseInt(quantity) || 1, 50);
+  const codes = [];
+
+  try {
+    for (let i = 0; i < qty; i++) {
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      await pool.query(
+        'INSERT INTO vouchers (code, package_id) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING',
+        [code, package_id]
+      );
+      codes.push(code);
+    }
+    res.json({ success: true, codes, package: PACKAGES[package_id].name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ VOUCHER LIST (Admin) ============
+app.get('/api/admin/vouchers', async (req, res) => {
+  if (req.headers['x-admin-key'] !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const result = await pool.query(
+      'SELECT * FROM vouchers ORDER BY created_at DESC LIMIT 200'
+    );
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
