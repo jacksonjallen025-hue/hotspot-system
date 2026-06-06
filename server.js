@@ -102,7 +102,11 @@ app.get('/api/packages', (req, res) => {
 
 // ============ API: INITIATE PAYMENT ============
 app.post('/api/pay', async (req, res) => {
-  const { phone, package: pkgId, mac } = req.body;
+  const { phone, package: pkgId } = req.body;
+  // Pata IP ya kweli ya mteja
+  const mac = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+               req.socket?.remoteAddress || 
+               req.ip || 'unknown';
 
   if (!PACKAGES[pkgId]) {
     return res.status(400).json({ success: false, message: 'Package batili' });
@@ -262,7 +266,11 @@ app.post('/api/agent/commands/:id/done', async (req, res) => {
 
 // ============ VOUCHER REDEEM (Customer) ============
 app.post('/api/voucher/redeem', async (req, res) => {
-  const { code, mac } = req.body;
+  const { code } = req.body;
+  // Pata IP ya kweli ya mteja
+  const mac = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+               req.socket?.remoteAddress || 
+               req.ip || 'unknown';
 
   if (!code || !mac) {
     return res.status(400).json({ success: false, message: 'Code na MAC zinahitajika' });
