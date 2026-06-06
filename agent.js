@@ -1,195 +1,259 @@
 // ============================================
-// HOTSPOT PC AGENT - Windows 11
-// Inaunganisha Cloud Server na Huawei AX3S
-// Inafanya kazi background bila kufanya kitu
+// HOTSPOT PC AGENT v4 - IP-based Control
+// Inatafuta device kwa IP badala ya MAC
 // ============================================
 
 const axios = require('axios');
-const crypto = require('crypto');
+const puppeteer = require('puppeteer');
 
-// ============ CONFIGURATION ============
 const CONFIG = {
-  SERVER_URL:    process.env.SERVER_URL    || 'https://YOUR-APP.onrender.com',
-  AGENT_KEY:     process.env.AGENT_KEY     || 'BADILISHA-KEY-HII',
-  ROUTER_IP:     process.env.ROUTER_IP     || '192.168.3.1',
-  ROUTER_PASS:   process.env.ROUTER_PASS   || 'NYWILA-YA-ROUTER',
-  CHECK_EVERY:   30000  // Angalia commands kila sekunde 30
+  SERVER_URL:  'https://hotspot-system-2.onrender.com',
+  AGENT_KEY:   'Agent@Secret2024',
+  ROUTER_IP:   '192.168.3.1',
+  ROUTER_PASS: '12345678L',
+  CHECK_EVERY: 30000
 };
 
-let routerToken = null;
-let tokenTime = null;
-const TOKEN_TTL = 4 * 60 * 1000; // Token inaisha baada ya dakika 4
+function log(msg) {
+  console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
+}
 
-// ============ ROUTER LOGIN ============
-async function loginRouter() {
+// ============ LOGIN TO ROUTER ============
+async function loginRouter(page) {
   try {
-    // Huawei AX3S uses SHA256 hashed password
-    const passHash = crypto
-      .createHash('sha256')
-      .update(CONFIG.ROUTER_PASS)
-      .digest('hex')
-      .toUpperCase();
+    log('📡 Inaingia router...');
+    await page.goto(`http://${CONFIG.ROUTER_IP}/html/index.html#/login`, {
+      waitUntil: 'networkidle2', timeout: 30000
+    });
+    await new Promise(r => setTimeout(r, 2000));
 
-    const res = await axios.post(
-      `http://${CONFIG.ROUTER_IP}/api/system/user_login`,
-      { password: passHash },
-      { 
-        timeout: 10000,
-        headers: { 'Content-Type': 'application/json' }
+    await page.waitForSelector('#userpassword_ctrl', { timeout: 10000 });
+    await page.click('#userpassword_ctrl');
+    await page.type('#userpassword_ctrl', CONFIG.ROUTER_PASS, { delay: 50 });
+    await page.keyboard.press('Enter');
+    await new Promise(r => setTimeout(r, 4000));
+
+    const url = page.url();
+    if (!url.includes('login')) {
+      log('✅ Imeingia router kikamilifu');
+      return true;
+    }
+
+    // Try clicking by text
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('*')) {
+        const text = (el.textContent || '').trim().toLowerCase();
+        if (text === 'log in' || text === 'login') {
+          el.click(); break;
+        }
       }
-    );
+    });
+    await new Promise(r => setTimeout(r, 4000));
 
-    if (res.data && res.data.token) {
-      routerToken = res.data.token;
-      tokenTime = Date.now();
-      log('✅ Router login OK');
+    const url2 = page.url();
+    if (!url2.includes('login')) {
+      log('✅ Imeingia router (click)');
       return true;
     }
 
-    // Some Huawei versions use cookies
-    if (res.headers['set-cookie']) {
-      routerToken = res.headers['set-cookie'][0].split(';')[0];
-      tokenTime = Date.now();
-      log('✅ Router login OK (cookie)');
-      return true;
-    }
-
-    log('⚠️ Login response unusual: ' + JSON.stringify(res.data));
+    log('❌ Login imeshindwa');
     return false;
   } catch (err) {
-    log('❌ Router login failed: ' + err.message);
+    log(`❌ Login error: ${err.message}`);
     return false;
   }
 }
 
-// ============ ENSURE VALID TOKEN ============
-async function ensureToken() {
-  const tokenExpired = !tokenTime || (Date.now() - tokenTime) > TOKEN_TTL;
-  if (!routerToken || tokenExpired) {
-    return await loginRouter();
-  }
-  return true;
-}
-
-// ============ CONTROL DEVICE ============
-async function controlDevice(mac, allow) {
+// ============ CONTROL DEVICE BY IP ============
+async function controlDeviceByIP(clientIP, allow) {
+  let browser;
   try {
-    const ok = await ensureToken();
-    if (!ok) {
-      log(`❌ Cannot control ${mac} - login failed`);
+    log(`${allow ? '🔓 Inafungua' : '🔒 Inazuia'} IP: ${clientIP}`);
+
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(30000);
+
+    // Login
+    const loggedIn = await loginRouter(page);
+    if (!loggedIn) {
+      await browser.close();
       return false;
     }
 
-    const action = allow ? 1 : 0;
+    // Get device list via router API (while logged in)
+    log('📋 Inapata orodha ya devices...');
     
-    // Try Huawei AX3S API endpoint
-    const res = await axios.post(
-      `http://${CONFIG.ROUTER_IP}/api/system/device_manage`,
-      {
-        mac_address: mac,
-        enable_internet: action
-      },
-      {
-        timeout: 10000,
-        headers: {
-          'Cookie': routerToken,
-          'X-Requested-With': 'XMLHttpRequest',
-          'Content-Type': 'application/json',
-          'Referer': `http://${CONFIG.ROUTER_IP}/`
+    const devices = await page.evaluate(async (routerIP) => {
+      try {
+        // Try to get connected devices
+        const res = await fetch(`http://${routerIP}/api/system/connected_devices_info`);
+        const data = await res.json();
+        return { success: true, data };
+      } catch(e) {
+        return { success: false, error: e.message };
+      }
+    }, CONFIG.ROUTER_IP);
+
+    log(`📊 Devices: ${JSON.stringify(devices).substring(0, 200)}`);
+
+    if (devices.success && devices.data) {
+      // Find device with matching IP
+      const deviceList = devices.data.device_list || devices.data.clients || 
+                         devices.data.devices || Object.values(devices.data);
+      
+      let targetMAC = null;
+      
+      if (Array.isArray(deviceList)) {
+        for (const device of deviceList) {
+          const devIP = device.ip || device.IP || device.ipAddress || device.ip_address;
+          if (devIP === clientIP) {
+            targetMAC = device.mac || device.MAC || device.macAddress || device.mac_address;
+            log(`✅ Device inapatikana! MAC: ${targetMAC}`);
+            break;
+          }
         }
       }
-    );
 
-    if (res.data && (res.data.errcode === 0 || res.data.result === 'success')) {
-      log(`${allow ? '✅ ALLOWED' : '⛔ BLOCKED'} MAC: ${mac}`);
+      if (targetMAC) {
+        // Control device via API
+        const controlRes = await page.evaluate(async (routerIP, mac, action) => {
+          try {
+            const res = await fetch(`http://${routerIP}/api/system/device_manage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mac_address: mac, enable_internet: action })
+            });
+            return await res.json();
+          } catch(e) {
+            return { error: e.message };
+          }
+        }, CONFIG.ROUTER_IP, targetMAC, allow ? 1 : 0);
+
+        log(`📡 Control jibu: ${JSON.stringify(controlRes)}`);
+        
+        if (controlRes.errcode === 0 || controlRes.result === 'success') {
+          log(`✅ ${allow ? 'IMEFUNGULIWA' : 'IMEZUILIWA'}: ${clientIP}`);
+          await browser.close();
+          return true;
+        }
+      }
+    }
+
+    // Fallback: Use UI to control device
+    log('🔄 Inajaribu njia ya UI...');
+    await page.goto(
+      `http://${CONFIG.ROUTER_IP}/html/index.html#/devicemanage`,
+      { waitUntil: 'networkidle2', timeout: 20000 }
+    );
+    await new Promise(r => setTimeout(r, 5000));
+
+    // Search by IP in the page
+    const uiResult = await page.evaluate((targetIP, shouldAllow) => {
+      const allEls = Array.from(document.querySelectorAll('*'));
+      for (const el of allEls) {
+        if (el.children.length > 3) continue; // Skip containers
+        const text = (el.textContent || '').trim();
+        if (text === targetIP) {
+          // Found IP element - search parent for toggle
+          let parent = el;
+          for (let i = 0; i < 6; i++) {
+            parent = parent.parentElement;
+            if (!parent) break;
+            const parentHTML = parent.innerHTML || '';
+            if (parentHTML.includes(targetIP)) {
+              const toggles = parent.querySelectorAll(
+                '[class*="switch"], [class*="toggle"], input[type="checkbox"], [role="switch"]'
+              );
+              if (toggles.length > 0) {
+                toggles[0].click();
+                return { found: true, html: parent.innerHTML.substring(0, 200) };
+              }
+            }
+          }
+          return { found: true, noToggle: true };
+        }
+      }
+      
+      // Get all IPs visible on page for debugging
+      const ips = [];
+      allEls.forEach(el => {
+        const t = (el.textContent || '').trim();
+        if (/^192\.168\.\d+\.\d+$/.test(t)) ips.push(t);
+      });
+      return { found: false, visibleIPs: [...new Set(ips)] };
+    }, clientIP, allow);
+
+    log(`UI Result: ${JSON.stringify(uiResult)}`);
+
+    if (uiResult.found) {
+      await new Promise(r => setTimeout(r, 2000));
+      log(`✅ ${allow ? 'IMEFUNGULIWA' : 'IMEZUILIWA'} via UI: ${clientIP}`);
+      await browser.close();
       return true;
     }
 
-    log(`⚠️ Control response: ${JSON.stringify(res.data)}`);
-    
-    // Reset token on failure
-    routerToken = null;
+    log(`⚠️ IPs zinaonekana: ${JSON.stringify(uiResult.visibleIPs)}`);
+    await browser.close();
     return false;
 
   } catch (err) {
-    log(`❌ Control failed for ${mac}: ${err.message}`);
-    routerToken = null; // Will re-login next time
+    log(`❌ Error: ${err.message}`);
+    if (browser) await browser.close();
     return false;
   }
 }
 
-// ============ PROCESS COMMANDS FROM SERVER ============
+// ============ PROCESS COMMANDS ============
 async function processCommands() {
   try {
     const res = await axios.get(
       `${CONFIG.SERVER_URL}/api/agent/commands`,
-      {
-        headers: { 'x-agent-key': CONFIG.AGENT_KEY },
-        timeout: 15000
-      }
+      { headers: { 'x-agent-key': CONFIG.AGENT_KEY }, timeout: 15000 }
     );
 
     const commands = res.data;
-    
-    if (commands.length > 0) {
-      log(`📋 ${commands.length} command(s) to process`);
-    }
+    if (commands.length > 0) log(`📋 Commands: ${commands.length}`);
 
     for (const cmd of commands) {
-      const allow = cmd.action === 'allow';
-      const success = await controlDevice(cmd.mac_address, allow);
-
-      if (success) {
-        // Mark command as done
+      // mac_address field now contains IP address
+      const clientIP = cmd.mac_address;
+      const ok = await controlDeviceByIP(clientIP, cmd.action === 'allow');
+      
+      if (ok) {
         await axios.post(
           `${CONFIG.SERVER_URL}/api/agent/commands/${cmd.id}/done`,
           {},
-          {
-            headers: { 'x-agent-key': CONFIG.AGENT_KEY },
-            timeout: 10000
-          }
+          { headers: { 'x-agent-key': CONFIG.AGENT_KEY } }
         );
-        log(`✔ Command ${cmd.id} marked done`);
+        log(`✔ Command ${cmd.id} imekamilika`);
       }
     }
   } catch (err) {
-    if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') {
-      log('🌐 Server unreachable - will retry...');
-    } else {
-      log(`❌ Command error: ${err.message}`);
-    }
+    log(`🌐 ${err.message}`);
   }
 }
 
-// ============ LOGGER ============
-function log(msg) {
-  const time = new Date().toLocaleTimeString('sw-TZ');
-  console.log(`[${time}] ${msg}`);
-}
-
-// ============ MAIN ============
 async function main() {
   console.log('');
-  console.log('╔══════════════════════════════════════╗');
-  console.log('║     HOTSPOT PC AGENT - Tanzania      ║');
-  console.log('╚══════════════════════════════════════╝');
+  console.log('╔══════════════════════════════════════════╗');
+  console.log('║  KARIBU NET - PC AGENT v4 (IP-Based)    ║');
+  console.log('╚══════════════════════════════════════════╝');
   console.log('');
   log(`📡 Router: ${CONFIG.ROUTER_IP}`);
   log(`☁️  Server: ${CONFIG.SERVER_URL}`);
-  log(`⏱️  Check every: ${CONFIG.CHECK_EVERY/1000}s`);
-  console.log('');
+  log(`⏱️  Kila sekunde: ${CONFIG.CHECK_EVERY/1000}`);
+  log('✅ Agent imeanza - Inasubiri commands...');
 
-  // Initial router login
-  await loginRouter();
-
-  // Process commands immediately
   await processCommands();
-
-  // Then every 30 seconds
   setInterval(processCommands, CONFIG.CHECK_EVERY);
 }
 
 main().catch(err => {
-  log('❌ Fatal error: ' + err.message);
+  log('❌ Fatal: ' + err.message);
   process.exit(1);
 });
